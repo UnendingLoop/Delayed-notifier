@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Notifications UI</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f4f4f4;
+        }
+
+        input,
+        button {
+            padding: 5px;
+            margin: 5px 0;
+        }
+
+        .planned {
+            color: blue;
+        }
+
+        .queued {
+            color: orange;
+        }
+
+        .sent {
+            color: green;
+        }
+
+        .cancelled {
+            color: red;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Notifications</h1>
+
+    <h2>Create Notification</h2>
+    <form id="createForm">
+        <label>Text: <input type="text" id="text" required></label><br>
+        <label>Send At (YYYY-MM-DD HH:MM:SS): <input type="text" id="sendAt" required></label><br>
+        <button type="submit">Create</button>
+    </form>
+
+    <h2>Current Notifications</h2>
+    <table id="notificationsTable">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Text</th>
+                <th>SendAt</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <script>
+        const API_BASE = '/api/notify';
+
+        async function fetchNotifications() {
+            const res = await fetch(API_BASE);
+            const data = await res.json();
+            const tbody = document.querySelector('#notificationsTable tbody');
+            tbody.innerHTML = '';
+            data.forEach(n => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+          <td>${n.id}</td>
+          <td>${n.text}</td>
+          <td>${new Date(n.sendAt).toLocaleString()}</td>
+          <td class="${n.status}">${n.status}</td>
+          <td>
+            ${n.status !== 'sent' && n.status !== 'cancelled' ? `<button onclick="cancelNotification('${n.id}')">Cancel</button>` : ''}
+          </td>
+        `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function createNotification(text, sendAt) {
+            const res = await fetch(API_BASE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, send_at: sendAt })
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                alert('Error: ' + err.error);
+            }
+            await fetchNotifications();
+        }
+
+        async function cancelNotification(id) {
+            const res = await fetch(`${API_BASE}/${id}`, { method: 'DELETE' });
+            if (!res.ok) {
+                const err = await res.json();
+                alert('Error: ' + err.error);
+            }
+            await fetchNotifications();
+        }
+
+        document.getElementById('createForm').addEventListener('submit', e => {
+            e.preventDefault();
+            const text = document.getElementById('text').value;
+            const sendAt = document.getElementById('sendAt').value;
+            createNotification(text, sendAt);
+            e.target.reset();
+        });
+
+        // Подгружаем таблицу каждые 5 секунд
+        fetchNotifications();
+        setInterval(fetchNotifications, 5000);
+    </script>
+</body>
+
+</html>

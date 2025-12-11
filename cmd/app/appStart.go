@@ -94,6 +94,7 @@ func StartApp() {
 	notify.GET("/:uid", handlers.GetTask)
 	notify.GET("/all", handlers.GetPendingTasks)
 	notify.DELETE("/:uid", handlers.DeleteTask)
+	server.Static("/web", "./internal/web")
 
 	// Server launch
 	if err := server.Run(":8080"); err != nil {
