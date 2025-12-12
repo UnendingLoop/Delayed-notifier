@@ -33,10 +33,6 @@
             margin: 5px 0;
         }
 
-        .planned {
-            color: blue;
-        }
-
         .queued {
             color: orange;
         }
@@ -79,19 +75,19 @@
         const API_BASE = '/api/notify';
 
         async function fetchNotifications() {
-            const res = await fetch(API_BASE);
+            const res = await fetch(`${API_BASE}/all`);
             const data = await res.json();
             const tbody = document.querySelector('#notificationsTable tbody');
             tbody.innerHTML = '';
             data.forEach(n => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-          <td>${n.id}</td>
-          <td>${n.text}</td>
-          <td>${new Date(n.sendAt).toLocaleString()}</td>
-          <td class="${n.status}">${n.status}</td>
+          <td>${n.ID}</td>
+          <td>${n.Text}</td>
+          <td>${new Date(n.SendAt).toLocaleString()}</td>
+          <td class="${n.Status}">${n.Status}</td>
           <td>
-            ${n.status !== 'sent' && n.status !== 'cancelled' ? `<button onclick="cancelNotification('${n.id}')">Cancel</button>` : ''}
+            ${n.Status !== 'sent' && n.Status !== 'cancelled' ? `<button onclick="cancelNotification('${n.id}')">Cancel</button>` : ''}
           </td>
         `;
                 tbody.appendChild(tr);
@@ -128,9 +124,9 @@
             e.target.reset();
         });
 
-        // Подгружаем таблицу каждые 5 секунд
+        // Подгружаем таблицу каждые 10 секунд
         fetchNotifications();
-        setInterval(fetchNotifications, 5000);
+        setInterval(fetchNotifications, 10000);
     </script>
 </body>
 

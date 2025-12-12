@@ -91,8 +91,37 @@ func (r *PostgresRepo) GetPending(ctx context.Context, until time.Time, limit in
 	return res, nil
 }
 
+func (r *PostgresRepo) GetAll(ctx context.Context) ([]*Notification, error) {
+	q := `SELECT id, recipient, channel, payload, text, send_at, status, retry_count, last_error, created_at, updated_at
+	      FROM notifications
+	      ORDER BY send_at ASC`
+	rows, err := r.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	res := make([]*Notification, 0)
+	for rows.Next() {
+		var n Notification
+		var payload []byte
+		var lastError sql.NullString
+		if err := rows.Scan(&n.ID, &n.Recipient, &n.Channel, &payload, &n.Text, &n.SendAt, &n.Status, &n.RetryCount, &lastError, &n.CreatedAt, &n.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if lastError.Valid {
+			n.LastError = &lastError.String
+		}
+		n.Payload = payload
+		res = append(res, &n)
+	}
+	return res, nil
+}
+
 func (r *PostgresRepo) MarkDelivered(ctx context.Context, id string) error {
-	res, err := r.db.ExecContext(ctx, `UPDATE notifications SET status='delivered', updated_at = now() WHERE id = $1`, id)
+	res, err := r.db.ExecContext(ctx, `UPDATE notifications SET status=$2, updated_at = now(), delivered = 'true' WHERE id = $1`, id, StSent)
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}

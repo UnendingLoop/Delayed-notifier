@@ -32,7 +32,6 @@ func (s *InMemoryRepo) Create(ctx context.Context, n *Notification) error {
 		return fmt.Errorf("failed to generate new uuid, try again")
 	}
 	n.CreatedAt = time.Now().UTC()
-	n.Status = "New"
 
 	s.tasks[n.ID] = n
 	return nil
@@ -50,14 +49,14 @@ func (s *InMemoryRepo) GetByID(ctx context.Context, id string) (*Notification, e
 }
 
 // GetAll возвращает все задачи
-func (s *InMemoryRepo) GetAll() []*Notification {
+func (s *InMemoryRepo) GetAll(ctx context.Context) ([]*Notification, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	result := make([]*Notification, 0, len(s.tasks))
 	for _, t := range s.tasks {
 		result = append(result, t)
 	}
-	return result
+	return result, nil
 }
 
 // GetPending возвращает все задачи, которые уже готовы к отправке
@@ -81,6 +80,8 @@ func (s *InMemoryRepo) MarkDelivered(ctx context.Context, id string) error {
 	if !exists {
 		return fmt.Errorf("ID %q not found to mark delivery", id)
 	}
+	task.Status = StSent
+	task.UpdatedAt = time.Now().UTC()
 	task.Delivered = true
 	return nil
 }

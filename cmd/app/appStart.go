@@ -24,7 +24,8 @@ import (
 
 func StartApp() {
 	// Initializing config from env
-	appConfig := config.Config{}
+	appConfig := config.New()
+	appConfig.EnableEnv("")
 	if err := appConfig.LoadEnvFiles("./.env"); err != nil {
 		log.Fatalf("Failed to load envs: %s\nExiting app...", err)
 	}
@@ -79,9 +80,12 @@ func StartApp() {
 	s := sender.NewLogSender()
 	w := worker.NewWorker(svc, s)
 	consumerRabbit := rabbitmq.NewConsumer(clientRabbit, consumerRabbitCFG, w.HandleMessage)
-	if err := consumerRabbit.Start(context.Background()); err != nil {
-		log.Fatalln("Failed to start RabbitMQ-consumer:", err)
-	}
+
+	go func() {
+		if err := consumerRabbit.Start(context.Background()); err != nil {
+			log.Fatalln("Failed to start RabbitMQ-consumer:", err)
+		}
+	}()
 
 	// Setting up server/endpoints/handlers
 	server := ginext.New("") // empty - debug mode, release - prod mode
@@ -92,7 +96,7 @@ func StartApp() {
 	server.GET("/ping", handlers.SimplePinger)
 	notify.POST("", handlers.CreateTask)
 	notify.GET("/:uid", handlers.GetTask)
-	notify.GET("/all", handlers.GetPendingTasks)
+	notify.GET("/all", handlers.GetAll)
 	notify.DELETE("/:uid", handlers.DeleteTask)
 	server.Static("/web", "./internal/web")
 

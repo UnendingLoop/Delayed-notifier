@@ -52,6 +52,7 @@ func NewRabbitInit(rabbitAddr, rabbitName string) (*rabbitmq.RabbitClient, *rabb
 		Workers:       1,
 		PrefetchCount: 1,
 	}
+	log.Println("Rabbit Init done")
 	return clientRabbit, producerRabbit, consumerCFG
 }
 

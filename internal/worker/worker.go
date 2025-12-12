@@ -5,9 +5,11 @@ package worker
 
 import (
 	"context"
+	"log"
 	"math"
 	"time"
 
+	"github.com/UnendingLoop/delayed-notifier/internal/repository"
 	"github.com/UnendingLoop/delayed-notifier/internal/sender"
 	"github.com/UnendingLoop/delayed-notifier/internal/service"
 	"github.com/rabbitmq/amqp091-go"
@@ -30,7 +32,7 @@ func (w *Worker) HandleMessage(ctx context.Context, msg amqp091.Delivery) error 
 		return err
 	}
 
-	if n.Status != service.StQueued {
+	if n.Status != repository.StQueued {
 		return msg.Ack(false)
 	}
 
@@ -42,7 +44,10 @@ func (w *Worker) HandleMessage(ctx context.Context, msg amqp091.Delivery) error 
 
 		// ограничение, например 5 попыток
 		if retries >= 5 {
-			// больше не пробуем → dead-letter
+			// больше не пробуем -> dead-letter
+			if err := w.storage.MarkDead(ctx, id); err != nil {
+				log.Println("Failed to mark note as dead:", err)
+			}
 			return msg.Reject(false)
 		}
 

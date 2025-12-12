@@ -46,7 +46,7 @@ func (H *Handler) CreateTask(ctx *ginext.Context) {
 		return
 	}
 
-	ctx.JSON(200, map[string]string{"id": task.ID, "status": "scheduled"})
+	ctx.JSON(200, map[string]string{"id": task.ID, "status": task.Status})
 }
 
 func (H *Handler) GetTask(ctx *ginext.Context) {
@@ -87,6 +87,16 @@ func (H *Handler) DeleteTask(ctx *ginext.Context) {
 		return
 	}
 	ctx.JSON(204, nil)
+}
+
+func (H *Handler) GetAll(ctx *ginext.Context) {
+	tasks, err := H.svc.GetAll(ctx.Request.Context())
+	if err != nil {
+		ctx.JSON(errorChecker(err), map[string]string{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(200, tasks)
 }
 
 func errorChecker(err error) int {

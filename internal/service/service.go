@@ -19,12 +19,6 @@ type NotificationService struct {
 	q     *rabbitmq.Publisher
 }
 
-const (
-	StQueued    = "queued"    // set by worker; notification is queued for sending - sendAT <= now & previous status = 'planned'
-	StSent      = "sent"      // set by sender; notification is sent to receiver - sendAT <= now
-	StCancelled = "cancelled" // set by service; notification cancelled
-)
-
 var ( // user-depending errors
 	ErrIncorrectTime    = errors.New("incorrect time provided")
 	ErrEmptyDescription = errors.New("no text/description provided for notification")
@@ -50,7 +44,7 @@ func (s *NotificationService) Create(reqCTX context.Context, text string, sendAt
 	note := repository.Notification{
 		Text:   text,
 		SendAt: sendAt.UTC(),
-		Status: StQueued,
+		Status: repository.StQueued,
 	}
 
 	ctx, cancel := withTimeout(reqCTX, 1*time.Second)
@@ -114,6 +108,18 @@ func (s *NotificationService) GetPending(reqCTX context.Context) ([]*repository.
 	return notes, nil
 }
 
+func (s *NotificationService) GetAll(reqCTX context.Context) ([]*repository.Notification, error) {
+	ctx, cancel := withTimeout(reqCTX, 3*time.Second)
+	defer cancel()
+
+	notes, err := s.repo.GetAll(ctx)
+	if err != nil {
+		log.Printf("Failed to get ALL notifications from DB: %v", err)
+		return nil, fmt.Errorf("failed to get ALL notifications from DB: %w", err)
+	}
+	return notes, nil
+}
+
 // Delete отменяет задачу - не удаляет!
 func (s *NotificationService) Delete(reqCTX context.Context, id string) error {
 	if len(id) == 0 {
@@ -123,7 +129,7 @@ func (s *NotificationService) Delete(reqCTX context.Context, id string) error {
 	ctx, cancel := withTimeout(reqCTX, 2*time.Second)
 	defer cancel()
 
-	n, err := s.repo.UpdateStatus(ctx, id, StCancelled)
+	n, err := s.repo.UpdateStatus(ctx, id, repository.StCancelled)
 	if err != nil {
 		return fmt.Errorf("failed to cancel notification %q: %s", id, err)
 	}
@@ -143,9 +149,29 @@ func (s *NotificationService) MarkSent(reqCTX context.Context, id string) error 
 	ctx, cancel := withTimeout(reqCTX, 2*time.Second)
 	defer cancel()
 
-	n, err := s.repo.UpdateStatus(ctx, id, StSent)
+	n, err := s.repo.UpdateStatus(ctx, id, repository.StSent)
 	if err != nil {
 		return fmt.Errorf("failed to cancel notification %q: %s", id, err)
+	}
+	// обновление записи в редисе
+	if err := s.cache.SetByUID(ctx, id, n); err != nil {
+		log.Printf("Failed to update notification %q in cache: %v", id, err)
+	}
+	return nil
+}
+
+// MarkDead отмечает нотификацию dead и обновляет ее в кеше
+func (s *NotificationService) MarkDead(reqCTX context.Context, id string) error {
+	if len(id) == 0 {
+		return ErrEmptyID
+	}
+
+	ctx, cancel := withTimeout(reqCTX, 2*time.Second)
+	defer cancel()
+
+	n, err := s.repo.UpdateStatus(ctx, id, repository.StDead)
+	if err != nil {
+		return fmt.Errorf("failed to update notification %q: %s", id, err)
 	}
 	// обновление записи в редисе
 	if err := s.cache.SetByUID(ctx, id, n); err != nil {
@@ -162,7 +188,7 @@ func (s *NotificationService) IncrRetry(reqCTX context.Context, id string) error
 	ctx, cancel := withTimeout(reqCTX, 2*time.Second)
 	defer cancel()
 
-	n, err := s.repo.IncrementRetry(ctx, id, StSent)
+	n, err := s.repo.IncrementRetry(ctx, id, repository.StSent)
 	if err != nil {
 		return fmt.Errorf("failed to increment retry count for notification %q: %s", id, err)
 	}
