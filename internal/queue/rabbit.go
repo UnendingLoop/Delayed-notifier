@@ -126,7 +126,7 @@ func setupQueues(ch *amqp.Channel) error {
 func PublishDelayed(ctx context.Context, ch *amqp.Channel, notificationID string, ttl time.Duration) error {
 	return ch.PublishWithContext(ctx,
 		"",
-		"delayed_notifications", // пустой routingKey, т.к. DLX
+		"delayed_notifications",
 		false,
 		false,
 		amqp.Publishing{
@@ -147,8 +147,8 @@ func PublishRetry(ch *amqp.Channel, notificationID string, attempt int) error {
 	}
 
 	return ch.Publish(
-		"",
-		"notifications_retry_queue",
+		"notifications_exchange",
+		"retry",
 		false,
 		false,
 		amqp.Publishing{

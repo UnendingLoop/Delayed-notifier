@@ -106,10 +106,6 @@ func (w *Worker) HandleMessage(ctx context.Context, msg amqp.Delivery) error {
 	return w.publishRetry(id, retries+1, delay, msg)
 }
 
-// ------------------------------
-// Вспомогательные функции
-// ------------------------------
-
 // publishDelayed кладет сообщение в delayed_notifications с TTL
 func (w *Worker) publishDelayed(id string, ttl time.Duration, msg amqp.Delivery) error {
 	err := w.channel.Publish(
@@ -139,7 +135,7 @@ func (w *Worker) publishRetry(id string, retries int, ttl time.Duration, msg amq
 	msg.Headers["x-retries"] = int32(retries)
 
 	err := w.channel.Publish(
-		"", // default exchange
+		"notifications_exchange",
 		"retry",
 		false,
 		false,

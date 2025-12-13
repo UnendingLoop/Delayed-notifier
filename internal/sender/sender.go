@@ -18,6 +18,6 @@ func NewLogSender() *LogSender {
 }
 
 func (ls *LogSender) Send(n *repository.Notification) error {
-	log.Printf("Notification %q text: %q", n.ID, n.Text)
+	log.Printf("Notification %q IS SENT: %d time", n.ID, n.RetryCount)
 	return nil
 }
