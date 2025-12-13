@@ -9,14 +9,15 @@ import (
 	"time"
 
 	"github.com/UnendingLoop/delayed-notifier/internal/cache"
+	"github.com/UnendingLoop/delayed-notifier/internal/queue"
 	"github.com/UnendingLoop/delayed-notifier/internal/repository"
-	"github.com/wb-go/wbf/rabbitmq"
+	"github.com/rabbitmq/amqp091-go"
 )
 
 type NotificationService struct {
 	repo  repository.NotificationRepository
 	cache cache.StatusCache
-	q     *rabbitmq.Publisher
+	q     *amqp091.Channel
 }
 
 var ( // user-depending errors
@@ -25,7 +26,7 @@ var ( // user-depending errors
 	ErrEmptyID          = errors.New("empty id is provided")
 )
 
-func NewNotificationService(repo repository.NotificationRepository, cache cache.StatusCache, q *rabbitmq.Publisher) *NotificationService {
+func NewNotificationService(repo repository.NotificationRepository, cache cache.StatusCache, q *amqp091.Channel) *NotificationService {
 	return &NotificationService{
 		repo:  repo,
 		cache: cache,
@@ -47,20 +48,22 @@ func (s *NotificationService) Create(reqCTX context.Context, text string, sendAt
 		Status: repository.StQueued,
 	}
 
-	ctx, cancel := withTimeout(reqCTX, 1*time.Second)
+	ctx, cancel := withTimeout(reqCTX, 2*time.Second)
 	defer cancel()
 
-	if err := s.repo.Create(ctx, &note); err != nil { // отправляем в базу
+	// кладем в базу
+	if err := s.repo.Create(ctx, &note); err != nil {
 		log.Printf("Failed to save notification %q in DB: %v", note.ID, err)
 		return nil, fmt.Errorf("failed to save a notification in DB: %w", err) // 500
 	}
 
-	ttl := time.Until(note.SendAt)
-	if err := s.q.Publish(ctx, []byte(note.ID), "delayed_notifications", rabbitmq.WithExpiration(ttl)); err != nil {
-		log.Println("Failed to publish notification to RabbitMQ:", err)
+	// публикуем в Rabbit
+	if err := queue.PublishDelayed(ctx, s.q, note.ID, time.Until(note.SendAt)); err != nil {
+		log.Println("Failed to publish to delayed queue:", err)
 	}
 
-	if err := s.cache.SetByUID(ctx, note.ID, &note); err != nil { // кладем в кэш
+	// кладем в Redis
+	if err := s.cache.SetByUID(ctx, note.ID, &note); err != nil {
 		log.Printf("Failed to cache notification %q in Redis: %v", note.ID, err) // 500
 	}
 
@@ -95,7 +98,7 @@ func (s *NotificationService) GetByID(reqCTX context.Context, id string) (*repos
 	return dbTask, nil
 }
 
-// GetPending возвращает все задачи, время отправки которых НАСТУПИЛО - то есть в прошлом и в статусе 'planned','queued'
+// GetPending возвращает все задачи, время отправки которых НАСТУПИЛО - то есть в прошлом и в статусе 'queued'
 func (s *NotificationService) GetPending(reqCTX context.Context) ([]*repository.Notification, error) {
 	ctx, cancel := withTimeout(reqCTX, 3*time.Second)
 	defer cancel()
@@ -197,15 +200,6 @@ func (s *NotificationService) IncrRetry(reqCTX context.Context, id string) error
 		log.Printf("Failed to update notification %q in cache: %v", id, err)
 	}
 	return nil
-}
-
-func (s *NotificationService) PublishRetry(ctx context.Context, id string, delay time.Duration) error {
-	return s.q.Publish(
-		ctx,
-		[]byte(id),
-		"delayed_notifications",
-		rabbitmq.WithExpiration(delay),
-	)
 }
 
 func withTimeout(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {

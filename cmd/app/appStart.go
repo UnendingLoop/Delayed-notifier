@@ -17,9 +17,7 @@ import (
 	"github.com/wb-go/wbf/config"
 	"github.com/wb-go/wbf/dbpg"
 	"github.com/wb-go/wbf/ginext"
-	"github.com/wb-go/wbf/rabbitmq"
 	"github.com/wb-go/wbf/redis"
-	//"github.com/wb-go/wbf/zlog"
 )
 
 func StartApp() {
@@ -52,8 +50,7 @@ func StartApp() {
 	case "postgres":
 		repo = repository.NewPostgresRepo(dbConn)
 		defer func() {
-			err := dbConn.Master.Close()
-			if err != nil {
+			if err := dbConn.Master.Close(); err != nil {
 				log.Println("Failed to close DB-conn correctly:", err)
 			}
 		}()
@@ -69,23 +66,25 @@ func StartApp() {
 	redisClient := cache.NewRedisCache(rawRedis, 1*time.Hour)
 
 	// Initializing RabbitMQ
+	time.Sleep(16 * time.Second) // даем контейнеру реббита нормально запуститься
 	rabbitAddr := appConfig.GetString("RABBIT_ADDR")
-	rabbitName := appConfig.GetString("RABBIT_NAME")
-	clientRabbit, producerRabbit, consumerRabbitCFG := queue.NewRabbitInit(rabbitAddr, rabbitName)
+	rabbitConn, rabbitCH, err := queue.NewRabbitInit(rabbitAddr)
+	if err != nil {
+		log.Fatalln("Faile to initialize rabbit:", err)
+	}
+	defer rabbitConn.Close()
 
 	// Initializing Service
-	svc := service.NewNotificationService(repo, redisClient, producerRabbit)
+	svc := service.NewNotificationService(repo, redisClient, rabbitCH)
 
-	// Launching Rabbit
+	// Launching Worker
 	s := sender.NewLogSender()
-	w := worker.NewWorker(svc, s)
-	consumerRabbit := rabbitmq.NewConsumer(clientRabbit, consumerRabbitCFG, w.HandleMessage)
+	w := worker.NewWorker(svc, s, rabbitCH)
 
-	go func() {
-		if err := consumerRabbit.Start(context.Background()); err != nil {
-			log.Fatalln("Failed to start RabbitMQ-consumer:", err)
-		}
-	}()
+	// Launching consumer from Rabbit
+	if err := w.StartConsuming(context.Background()); err != nil {
+		log.Fatalln("Failed to start worker consumer:", err)
+	}
 
 	// Setting up server/endpoints/handlers
 	server := ginext.New("") // empty - debug mode, release - prod mode

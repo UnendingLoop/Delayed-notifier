@@ -92,7 +92,7 @@ func (s *InMemoryRepo) UpdateStatus(ctx context.Context, id string, status strin
 	defer s.mu.Unlock()
 	task, exists := s.tasks[id]
 	if !exists {
-		return nil, fmt.Errorf("ID %q not found to update status", id)
+		return nil, ErrNotFound
 	}
 	task.Status = status
 	return task, nil

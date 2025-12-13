@@ -87,7 +87,7 @@
           <td>${new Date(n.SendAt).toLocaleString()}</td>
           <td class="${n.Status}">${n.Status}</td>
           <td>
-            ${n.Status !== 'sent' && n.Status !== 'cancelled' ? `<button onclick="cancelNotification('${n.id}')">Cancel</button>` : ''}
+            ${n.Status !== 'sent' && n.Status !== 'cancelled' ? `<button onclick="cancelNotification('${n.ID}')">Cancel</button>` : ''}
           </td>
         `;
                 tbody.appendChild(tr);
