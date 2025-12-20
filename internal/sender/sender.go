@@ -13,7 +13,7 @@ type Sender interface {
 
 type LogSender struct{}
 
-func NewLogSender() *LogSender {
+func NewSender() *LogSender {
 	return &LogSender{}
 }
 

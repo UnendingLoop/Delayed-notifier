@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/UnendingLoop/delayed-notifier/internal/cache"
+	"github.com/UnendingLoop/delayed-notifier/internal/migration"
 	"github.com/UnendingLoop/delayed-notifier/internal/queue"
 	"github.com/UnendingLoop/delayed-notifier/internal/repository"
 	"github.com/UnendingLoop/delayed-notifier/internal/sender"
@@ -21,24 +22,14 @@ import (
 )
 
 func StartApp() {
+	// даем контейнерам реббита и постгрес нормально запуститься
+	time.Sleep(35 * time.Second) // лучше бы конечно ретрай логику
+
 	// Initializing config from env
 	appConfig := config.New()
 	appConfig.EnableEnv("")
 	if err := appConfig.LoadEnvFiles("./.env"); err != nil {
 		log.Fatalf("Failed to load envs: %s\nExiting app...", err)
-	}
-
-	// Connecting to Postgres
-	dbOptions := dbpg.Options{
-		MaxOpenConns:    5,
-		MaxIdleConns:    5,
-		ConnMaxLifetime: 10 * time.Minute,
-	}
-	dsnLink := appConfig.GetString("POSTGRES_DSN")
-	dbConn, err := dbpg.New(dsnLink, nil, &dbOptions)
-	if err != nil {
-		log.Fatalf("Failed to connect to PGDB: %s\nExiting app...", err)
-		return
 	}
 
 	// Initializing Repository
@@ -48,12 +39,27 @@ func StartApp() {
 	case "in-memory":
 		repo = repository.NewInMemoryRepo()
 	case "postgres":
+		// Connecting to Postgres
+		dbOptions := dbpg.Options{
+			MaxOpenConns:    5,
+			MaxIdleConns:    5,
+			ConnMaxLifetime: 10 * time.Minute,
+		}
+		dsnLink := appConfig.GetString("POSTGRES_DSN")
+		dbConn, err := dbpg.New(dsnLink, nil, &dbOptions)
+		if err != nil {
+			log.Fatalf("Failed to connect to PGDB: %s\nExiting app...", err)
+			return
+		}
 		repo = repository.NewPostgresRepo(dbConn)
 		defer func() {
 			if err := dbConn.Master.Close(); err != nil {
 				log.Println("Failed to close DB-conn correctly:", err)
 			}
 		}()
+		if err := migration.Run(dbConn.Master, "./migration"); err != nil {
+			log.Fatalf("Failed to run migrations: %s", err)
+		}
 	default:
 		log.Fatalf("Storage value %q provided in env is incorrect!\nExiting app...", storeType)
 	}
@@ -66,7 +72,6 @@ func StartApp() {
 	redisClient := cache.NewRedisCache(rawRedis, 1*time.Hour)
 
 	// Initializing RabbitMQ
-	time.Sleep(16 * time.Second) // даем контейнеру реббита нормально запуститься
 	rabbitAddr := appConfig.GetString("RABBIT_ADDR")
 	rabbitConn, rabbitCH, err := queue.NewRabbitInit(rabbitAddr)
 	if err != nil {
@@ -78,7 +83,7 @@ func StartApp() {
 	svc := service.NewNotificationService(repo, redisClient, rabbitCH)
 
 	// Launching Worker
-	s := sender.NewLogSender()
+	s := sender.NewSender()
 	w := worker.NewWorker(svc, s, rabbitCH)
 
 	// Launching consumer from Rabbit

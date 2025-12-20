@@ -1,12 +1,14 @@
+-- Active: 1755599099452@@127.0.0.1@5432@notifier_dev
 -- migrations/0001_create_notifications_table.up.sql
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 CREATE TABLE IF NOT EXISTS notifications (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4 (),
-    recipient TEXT, -- кто получет (можно user_id или email)
-    channel TEXT, -- 'email' | 'telegram' | 'console' ...
-    payload JSONB, -- произвольная полезная нагрузка
-    text TEXT, -- дублируем для простоты поиска/лога
+    recipient TEXT,
+    channel TEXT,
+    text TEXT,
     send_at TIMESTAMPTZ NOT NULL,
-    status TEXT NOT NULL DEFAULT 'planned', -- planned|queued|delivered|failed|cancelled
+    status TEXT NOT NULL DEFAULT 'queued',
     retry_count INT NOT NULL DEFAULT 0,
     last_error TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),

@@ -5,12 +5,11 @@ package worker
 import (
 	"context"
 	"log"
-	"math"
-	"strconv"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
+	"github.com/UnendingLoop/delayed-notifier/internal/queue"
 	"github.com/UnendingLoop/delayed-notifier/internal/repository"
 	"github.com/UnendingLoop/delayed-notifier/internal/sender"
 	"github.com/UnendingLoop/delayed-notifier/internal/service"
@@ -77,7 +76,8 @@ func (w *Worker) HandleMessage(ctx context.Context, msg amqp.Delivery) error {
 	// 1) Если еще рано отправлять → откладываем в delayed_notifications с TTL
 	if now.Before(n.SendAt) {
 		delay := time.Until(n.SendAt)
-		return w.publishDelayed(id, delay, msg)
+		// return w.publishDelayed(id, delay, msg)
+		return queue.RePublishDelayed(ctx, w.channel, id, delay, msg)
 	}
 
 	// 2) Пытаемся отправить
@@ -99,63 +99,8 @@ func (w *Worker) HandleMessage(ctx context.Context, msg amqp.Delivery) error {
 		return msg.Ack(false)
 	}
 
-	// 4) Экспоненциальная задержка
-	baseDelay := 2 * time.Second
-	delay := time.Duration(float64(baseDelay) * math.Pow(2, float64(retries)))
-
-	return w.publishRetry(id, retries+1, delay, msg)
-}
-
-// publishDelayed кладет сообщение в delayed_notifications с TTL
-func (w *Worker) publishDelayed(id string, ttl time.Duration, msg amqp.Delivery) error {
-	err := w.channel.Publish(
-		"", // default exchange
-		"delayed_notifications",
-		false,
-		false,
-		amqp.Publishing{
-			ContentType: "text/plain",
-			Body:        []byte(id),
-			Expiration:  formatTTL(ttl),
-			Headers:     msg.Headers, // можно перенести заголовки
-		},
-	)
-	if err != nil {
-		log.Println("failed to publish to delayed_notifications:", err)
-		return msg.Nack(false, true)
-	}
-	return msg.Ack(false)
-}
-
-// publishRetry кладет сообщение в retry_queue с TTL
-func (w *Worker) publishRetry(id string, retries int, ttl time.Duration, msg amqp.Delivery) error {
-	if msg.Headers == nil {
-		msg.Headers = amqp.Table{}
-	}
-	msg.Headers["x-retries"] = int32(retries)
-
-	err := w.channel.Publish(
-		"notifications_exchange",
-		"retry",
-		false,
-		false,
-		amqp.Publishing{
-			ContentType: "text/plain",
-			Body:        []byte(id),
-			Expiration:  formatTTL(ttl),
-			Headers:     msg.Headers,
-		},
-	)
-	if err != nil {
-		log.Println("failed to publish to retry queue:", err)
-		return msg.Nack(false, true)
-	}
-	return msg.Ack(false)
-}
-
-// formatTTL возвращает TTL в миллисекундах
-func formatTTL(d time.Duration) string {
-	return strconv.Itoa(int(d / time.Millisecond))
+	// return w.publishRetry(id, retries+1, delay, msg)
+	return queue.PublishRetry(w.channel, id, retries+1)
 }
 
 // getRetries извлекает количество попыток из x-retries

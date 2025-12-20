@@ -122,9 +122,9 @@ func setupQueues(ch *amqp.Channel) error {
 	return nil
 }
 
-// PublishDelayed публикует сообщение в Queue1 с TTL (в миллисекундах)
+// PublishDelayed публикует новосозданную нотификацию в Queue1 с TTL (в миллисекундах)
 func PublishDelayed(ctx context.Context, ch *amqp.Channel, notificationID string, ttl time.Duration) error {
-	return ch.PublishWithContext(ctx,
+	err := ch.PublishWithContext(ctx,
 		"",
 		"delayed_notifications",
 		false,
@@ -135,6 +135,32 @@ func PublishDelayed(ctx context.Context, ch *amqp.Channel, notificationID string
 			Expiration:  fmt.Sprintf("%d", int(ttl.Milliseconds())),
 		},
 	)
+	if err != nil {
+		log.Println("failed to publish to delayed_notifications:", err)
+		return err
+	}
+	return nil
+}
+
+// RePublishDelayed повторно публикует сообщение в Queue1 с TTL (в миллисекундах)
+func RePublishDelayed(ctx context.Context, ch *amqp.Channel, notificationID string, ttl time.Duration, msg amqp.Delivery) error {
+	err := ch.PublishWithContext(ctx,
+		"",
+		"delayed_notifications",
+		false,
+		false,
+		amqp.Publishing{
+			ContentType: "text/plain",
+			Body:        []byte(notificationID),
+			Expiration:  fmt.Sprintf("%d", int(ttl.Milliseconds())),
+			Headers:     msg.Headers,
+		},
+	)
+	if err != nil {
+		log.Println("failed to publish to delayed_notifications:", err)
+		return msg.Nack(false, true)
+	}
+	return msg.Ack(false)
 }
 
 // PublishRetry публикует сообщение в RetryQueue с экспоненциальной задержкой

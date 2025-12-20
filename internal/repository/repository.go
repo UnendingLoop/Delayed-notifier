@@ -16,7 +16,6 @@ type Notification struct {
 	ID         string
 	Recipient  string
 	Channel    string
-	Payload    []byte
 	Text       string
 	Status     string
 	RetryCount int
