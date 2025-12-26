@@ -15,17 +15,17 @@ type PostgresRepo struct {
 	db *dbpg.DB
 }
 
-func NewPostgresRepo(db *dbpg.DB) *PostgresRepo {
+func NewPostgresRepo(db *dbpg.DB) NotificationRepository {
 	return &PostgresRepo{db: db}
 }
 
 func (r *PostgresRepo) Create(ctx context.Context, n *Notification) error {
-	query := `INSERT INTO notifications (id, recipient, channel, text, send_at, status)
-	VALUES (DEFAULT, $1, $2, $3, $4, $5)
+	query := `INSERT INTO notifications (id, channel, text, send_at, status)
+	VALUES (DEFAULT, $1, $2, $3)
 	RETURNING id`
 
 	err := r.db.QueryRowContext(ctx, query,
-		n.Recipient, n.Channel, n.Text, n.SendAt, n.Status,
+		n.Text, n.SendAt, n.Status,
 	).Scan(&n.ID)
 	if err != nil {
 		return err
@@ -34,29 +34,22 @@ func (r *PostgresRepo) Create(ctx context.Context, n *Notification) error {
 }
 
 func (r *PostgresRepo) GetByID(ctx context.Context, id string) (*Notification, error) {
-	q := `SELECT id, recipient, channel, text, send_at, status, retry_count, last_error, created_at, updated_at
+	q := `SELECT id, text, send_at, status, retry_count, created_at, updated_at
 	      FROM notifications WHERE id = $1`
 	row := r.db.QueryRowContext(ctx, q, id)
 	var n Notification
-	var lastError sql.NullString
-	if err := row.Scan(&n.ID, &n.Recipient, &n.Channel, &n.Text, &n.SendAt, &n.Status, &n.RetryCount, &lastError, &n.CreatedAt, &n.UpdatedAt); err != nil {
+	if err := row.Scan(&n.ID, &n.Text, &n.SendAt, &n.Status, &n.RetryCount, &n.CreatedAt, &n.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
 		}
 		return nil, err
-	}
-	if lastError.Valid {
-		s := lastError.String
-		n.LastError = &s
-	} else {
-		n.LastError = nil
 	}
 
 	return &n, nil
 }
 
 func (r *PostgresRepo) GetPending(ctx context.Context, until time.Time, limit int) ([]*Notification, error) {
-	q := `SELECT id, recipient, channel, text, send_at, status, retry_count, last_error, created_at, updated_at
+	q := `SELECT id, text, send_at, status, retry_count, created_at, updated_at
 	      FROM notifications
 	      WHERE status IN ('planned','queued') AND send_at <= $1
 	      ORDER BY send_at ASC
@@ -73,11 +66,8 @@ func (r *PostgresRepo) GetPending(ctx context.Context, until time.Time, limit in
 	for rows.Next() {
 		var n Notification
 		var lastError sql.NullString
-		if err := rows.Scan(&n.ID, &n.Recipient, &n.Channel, &n.Text, &n.SendAt, &n.Status, &n.RetryCount, &lastError, &n.CreatedAt, &n.UpdatedAt); err != nil {
+		if err := rows.Scan(&n.ID, &n.Text, &n.SendAt, &n.Status, &n.RetryCount, &lastError, &n.CreatedAt, &n.UpdatedAt); err != nil {
 			return nil, err
-		}
-		if lastError.Valid {
-			n.LastError = &lastError.String
 		}
 		res = append(res, &n)
 	}
@@ -85,7 +75,7 @@ func (r *PostgresRepo) GetPending(ctx context.Context, until time.Time, limit in
 }
 
 func (r *PostgresRepo) GetAll(ctx context.Context) ([]*Notification, error) {
-	q := `SELECT id, recipient, channel, text, send_at, status, retry_count, last_error, created_at, updated_at
+	q := `SELECT id, text, send_at, status, retry_count, created_at, updated_at
 	      FROM notifications
 	      ORDER BY send_at ASC`
 	rows, err := r.db.QueryContext(ctx, q)
@@ -100,11 +90,8 @@ func (r *PostgresRepo) GetAll(ctx context.Context) ([]*Notification, error) {
 	for rows.Next() {
 		var n Notification
 		var lastError sql.NullString
-		if err := rows.Scan(&n.ID, &n.Recipient, &n.Channel, &n.Text, &n.SendAt, &n.Status, &n.RetryCount, &lastError, &n.CreatedAt, &n.UpdatedAt); err != nil {
+		if err := rows.Scan(&n.ID, &n.Text, &n.SendAt, &n.Status, &n.RetryCount, &lastError, &n.CreatedAt, &n.UpdatedAt); err != nil {
 			return nil, err
-		}
-		if lastError.Valid {
-			n.LastError = &lastError.String
 		}
 		res = append(res, &n)
 	}
@@ -122,9 +109,9 @@ func (r *PostgresRepo) MarkDelivered(ctx context.Context, id string) error {
 func (r *PostgresRepo) IncrementRetry(ctx context.Context, id string, errMsg string) (*Notification, error) {
 	q := `UPDATE notifications SET retry_count = retry_count + 1, last_error = $2, updated_at = now()
 	      WHERE id = $1
-	      RETURNING id, recipient, channel, text, send_at, status, retry_count, last_error, created_at, updated_at`
+	      RETURNING id, text, send_at, status, retry_count, created_at, updated_at`
 	var note Notification
-	if err := r.db.QueryRowContext(ctx, q, id, errMsg).Scan(&note.ID, &note.Recipient, &note.Channel, &note.Text, &note.SendAt, &note.Status, &note.RetryCount, &note.LastError, &note.CreatedAt, &note.UpdatedAt); err != nil {
+	if err := r.db.QueryRowContext(ctx, q, id, errMsg).Scan(&note.ID, &note.Text, &note.SendAt, &note.Status, &note.RetryCount, &note.CreatedAt, &note.UpdatedAt); err != nil {
 		return nil, err
 	}
 	return &note, nil
@@ -135,7 +122,7 @@ func (r *PostgresRepo) UpdateStatus(ctx context.Context, id string, status strin
 	UPDATE notifications 
 	SET status=$2, updated_at = now() 
 	WHERE id = $1
-	RETURNING id, recipient, channel, text, send_at, status, retry_count, last_error, created_at, updated_at
+	RETURNING id, text, send_at, status, retry_count, created_at, updated_at
 	`, id, status)
 
 	if errors.Is(res.Err(), sql.ErrNoRows) {
@@ -143,15 +130,8 @@ func (r *PostgresRepo) UpdateStatus(ctx context.Context, id string, status strin
 	}
 	var n Notification
 	var lastError sql.NullString
-	if err := res.Scan(&n.ID, &n.Recipient, &n.Channel, &n.Text, &n.SendAt, &n.Status, &n.RetryCount, &lastError, &n.CreatedAt, &n.UpdatedAt); err != nil {
+	if err := res.Scan(&n.ID, &n.Text, &n.SendAt, &n.Status, &n.RetryCount, &lastError, &n.CreatedAt, &n.UpdatedAt); err != nil {
 		return nil, err
-	}
-
-	if lastError.Valid {
-		s := lastError.String
-		n.LastError = &s
-	} else {
-		n.LastError = nil
 	}
 
 	return &n, nil

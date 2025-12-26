@@ -16,7 +16,7 @@ type InMemoryRepo struct {
 	tasks map[string]*Notification
 }
 
-func NewInMemoryRepo() *InMemoryRepo {
+func NewInMemoryRepo() NotificationRepository {
 	return &InMemoryRepo{
 		tasks: make(map[string]*Notification),
 	}

@@ -23,7 +23,7 @@ import (
 
 func StartApp() {
 	// даем контейнерам реббита и постгрес нормально запуститься
-	time.Sleep(35 * time.Second) // лучше бы конечно ретрай логику
+	time.Sleep(10 * time.Second) // лучше бы конечно ретрай логику
 
 	// Initializing config from env
 	appConfig := config.New()

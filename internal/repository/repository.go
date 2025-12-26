@@ -10,17 +10,17 @@ import (
 var ErrNotFound = errors.New("notification not found")
 
 type Notification struct {
-	SendAt     time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	ID         string
-	Recipient  string
-	Channel    string
+	SendAt    time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	ID        string
+	// Recipient  string
+	// Channel    string
 	Text       string
 	Status     string
 	RetryCount int
-	LastError  *string
-	Delivered  bool
+	//	LastError  *string
+	Delivered bool
 }
 
 const (
